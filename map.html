@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chapai Fuel - ম্যাপ ভিউ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        #map {
+            height: 75vh;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        .custom-marker {
+            background: none;
+            border: none;
+        }
+        .leaflet-popup-content {
+            min-width: 200px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <header class="bg-gradient-to-r from-orange-600 to-red-600 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-2xl font-bold">⛽ Chapai Fuel</h1>
+                    <p class="text-sm">ম্যাপে পাম্পের অবস্থান দেখুন</p>
+                </div>
+                <div class="space-x-2">
+                    <a href="index.html" class="px-4 py-2 bg-orange-500 rounded-lg hover:bg-orange-700">📋 লিস্ট ভিউ</a>
+                    <a href="map.html" class="px-4 py-2 bg-white text-orange-600 rounded-lg font-semibold">🗺️ ম্যাপ ভিউ</a>
+                </div>
+            </div>
+        </div>
+    </header>
+    
+    <div class="container mx-auto px-4 py-4">
+        <div id="map"></div>
+        <p class="text-center text-sm text-gray-500 mt-2">
+            <i class="fas fa-map-marker-alt text-green-600"></i> সবুজ: সব জ্বালানি আছে |
+            <i class="fas fa-map-marker-alt text-orange-600"></i> কমলা: আংশিক আছে |
+            <i class="fas fa-map-marker-alt text-red-600"></i> লাল: কিছুই নেই
+        </p>
+    </div>
+    
+    <script>
+        const SPREADSHEET_ID = '1fsJx1S2AadU9KJzkwhAGYvAXN662o5YL8lE2V3dzQ2g';
+        const API_KEY = 'AIzaSyCUThG9UZmR_587jy5WTzc0zBfdhuu_IUc';
+        const SHEET_NAME = 'Sheet1';
+        
+        // ম্যাপ ইনিশিয়ালাইজ (চাঁপাইনবাবগঞ্জ সেন্টার)
+        const map = L.map('map').setView([24.6, 88.2667], 11);
+        
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        function getMarkerColor(pump) {
+            const hasPetrol = pump.petrol_stock === 'available';
+            const hasDiesel = pump.diesel_stock === 'available';
+            const hasOctane = pump.octane_stock === 'available';
+            
+            if (hasPetrol && hasDiesel && hasOctane) return '#10b981'; // সবুজ
+            if (hasPetrol || hasDiesel || hasOctane) return '#f97316'; // কমলা
+            return '#ef4444'; // লাল
+        }
+        
+        async function loadPumpsOnMap() {
+            try {
+                const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${SHEET_NAME}?key=${API_KEY}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (!data.values || data.values.length <= 1) {
+                    map.setView([24.6, 88.2667], 9);
+                    L.popup()
+                        .setLatLng([24.6, 88.2667])
+                        .setContent('⚠️ এখনো কোনো ডাটা যোগ করা হয়নি। Google Sheets-এ ডাটা যোগ করুন।')
+                        .openOn(map);
+                    return;
+                }
+                
+                const rows = data.values.slice(1);
+                
+                rows.forEach(row => {
+                    const pump = {
+                        name: row[1],
+                        upazila: row[2],
+                        lat: parseFloat(row[4]),
+                        lng: parseFloat(row[5]),
+                        petrol_stock: row[6] || 'unavailable',
+                        petrol_price: row[7],
+                        diesel_stock: row[8] || 'unavailable',
+                        diesel_price: row[9],
+                        octane_stock: row[10] || 'unavailable',
+                        octane_price: row[11],
+                        line_status: row[12] || 'no_line'
+                    };
+                    
+                    if (pump.lat && pump.lng && pump.lat !== 0 && pump.name) {
+                        const color = getMarkerColor(pump);
+                        
+                        const marker = L.marker([pump.lat, pump.lng], {
+                            icon: L.divIcon({
+                                className: 'custom-marker',
+                                html: `<div style="background-color: ${color}; width: 28px; height: 28px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-gas-pump" style="color: white; font-size: 12px;"></i>
+                                       </div>`,
+                                iconSize: [28, 28],
+                                popupAnchor: [0, -14]
+                            })
+                        }).bindPopup(`
+                            <div class="p-2" style="min-width: 180px;">
+                                <h3 class="font-bold text-lg">⛽ ${pump.name}</h3>
+                                <p class="text-sm text-gray-600">📍 ${pump.upazila}</p>
+                                <hr class="my-2">
+                                <div class="text-sm space-y-1">
+                                    <div class="${pump.petrol_stock === 'available' ? 'text-green-600' : 'text-red-600'}">
+                                        🟢 পেট্রোল: ${pump.petrol_stock === 'available' ? 'আছে' : 'নেই'} ${pump.petrol_price ? `(৳${pump.petrol_price})` : ''}
+                                    </div>
+                                    <div class="${pump.diesel_stock === 'available' ? 'text-green-600' : 'text-red-600'}">
+                                        🟡 ডিজেল: ${pump.diesel_stock === 'available' ? 'আছে' : 'নেই'} ${pump.diesel_price ? `(৳${pump.diesel_price})` : ''}
+                                    </div>
+                                    <div class="${pump.octane_stock === 'available' ? 'text-green-600' : 'text-red-600'}">
+                                        🔷 অকটেন: ${pump.octane_stock === 'available' ? 'আছে' : 'নেই'} ${pump.octane_price ? `(৳${pump.octane_price})` : ''}
+                                    </div>
+                                    <div class="mt-1 pt-1 border-t">
+                                        🚦 ${getLineText(pump.line_status)}
+                                    </div>
+                                </div>
+                                <a href="index.html" class="block mt-2 text-center bg-orange-500 text-white rounded py-1 text-sm hover:bg-orange-600 transition">
+                                    বিস্তারিত দেখুন
+                                </a>
+                            </div>
+                        `).addTo(map);
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error:', error);
+                L.popup()
+                    .setLatLng([24.6, 88.2667])
+                    .setContent('❌ ডাটা লোড করতে সমস্যা হয়েছে। API Key বা Sheet ID চেক করুন।')
+                    .openOn(map);
+            }
+        }
+        
+        function getLineText(status) {
+            const lines = {
+                'no_line': '✅ কোন লাইন নেই',
+                'small_line': '⚠️ ছোট লাইন',
+                'big_line': '🔴 বড় লাইন'
+            };
+            return lines[status] || '❓ তথ্য নেই';
+        }
+        
+        loadPumpsOnMap();
+    </script>
+</body>
+</html>
